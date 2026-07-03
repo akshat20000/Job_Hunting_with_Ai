@@ -1,0 +1,39 @@
+name: Docker Build Validation
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-images:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Build Automation Engine Layer
+      - name: Validate Automation Engine Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./automation-engine
+          file: ./automation-engine/Dockerfile
+          push: false
+          tags: ai-job-agent/automation-engine:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Build Brain Engine Layer
+      - name: Validate Brain Engine Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./brain-engine
+          file: ./brain-engine/Dockerfile
+          push: false
+          tags: ai-job-agent/brain-engine:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

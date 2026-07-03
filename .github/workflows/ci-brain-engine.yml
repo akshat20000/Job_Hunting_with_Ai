@@ -1,0 +1,42 @@
+name: CI - Brain Engine
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'brain-engine/**'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'brain-engine/**'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    defaults:
+      run:
+        working-directory: ./brain-engine
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: 'brain-engine/requirements*.txt'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Run Brain Engine Tests
+        run: python -m pytest
+        env:
+          PYTHONPATH: .
+          TESTING: "True"
