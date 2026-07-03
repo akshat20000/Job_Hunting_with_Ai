@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  brain-engine:
+    environment:
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./brain-engine:/usr/src/app
+      # Exclude caching layers to avoid redownloading SentenceTransformer models
+      - hf_cache:/root/.cache/huggingface
+
+  automation-engine:
+    environment:
+      - NODE_ENV=development
+    volumes:
+      - ./automation-engine:/usr/src/app
+      # Exclude host node_modules mapping to protect container installation
+      - /usr/src/app/node_modules
+    command: npm run dev
+
+volumes:
+  hf_cache:

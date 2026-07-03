@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Application Submitted Successfully</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: #0b0f19;
+      color: #f3f4f6;
+      margin: 0;
+      padding: 0;
+    }
+    .container {
+      max-width: 600px;
+      margin: 40px auto;
+      background: #111827;
+      border: 1px solid #1f2937;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    }
+    .header {
+      background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+      padding: 30px;
+      text-align: center;
+      color: #ffffff;
+    }
+    .header h1 {
+      margin: 0;
+      font-size: 24px;
+      font-weight: 700;
+    }
+    .content {
+      padding: 30px;
+      line-height: 1.6;
+    }
+    .detail-card {
+      background: #1f2937;
+      border-radius: 8px;
+      padding: 20px;
+      margin: 20px 0;
+      border-left: 4px solid #10b981;
+    }
+    .detail-card table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .detail-card td {
+      padding: 6px 0;
+      color: #f3f4f6;
+    }
+    .detail-card td.label {
+      color: #9ca3af;
+      font-weight: 600;
+      width: 120px;
+    }
+    .footer {
+      background: #1f2937;
+      padding: 20px;
+      text-align: center;
+      font-size: 12px;
+      color: #9ca3af;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🚀 Job Application Submitted!</h1>
+    </div>
+    <div class="content">
+      <p>Hello,</p>
+      <p>Great news! The AI Job Agent has successfully submitted your application for the following position:</p>
+      
+      <div class="detail-card">
+        <table>
+          <tr>
+            <td class="label">Job Title:</td>
+            <td>{{jobTitle}}</td>
+          </tr>
+          <tr>
+            <td class="label">Company:</td>
+            <td>{{companyName}}</td>
+          </tr>
+          <tr>
+            <td class="label">Job Link:</td>
+            <td><a href="{{jobUrl}}" style="color: #10b981; text-decoration: none;">View Listing</a></td>
+          </tr>
+          <tr>
+            <td class="label">Applied At:</td>
+            <td>{{appliedAt}}</td>
+          </tr>
+        </table>
+      </div>
+
+      <p>We've captured a submission proof screenshot and saved it locally in the applications directory.</p>
+      
+      <p>Good luck!</p>
+      <p>Best regards,<br>AI Job Agent Team</p>
+    </div>
+    <div class="footer">
+      <p>Sent automatically by AI Job Agent. Running locally.</p>
+    </div>
+  </div>
+</body>
+</html>

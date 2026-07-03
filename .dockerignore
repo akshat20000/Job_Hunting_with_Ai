@@ -1,0 +1,26 @@
+# Build Directories
+**/node_modules
+**/dist
+**/.venv
+*/.venv
+**/.pytest_cache
+**/hf_cache
+
+# Configuration & Secrets
+.env
+.env.local
+.env.development
+.env.production
+
+# Ignore generated storage / local test artifacts
+**/storage/resumes/*
+**/storage/coverletters/*
+**/storage/screenshots/*
+
+# Version Control & Tools
+.git
+.github
+.gemini
+*.log
+README.md
+LICENSE

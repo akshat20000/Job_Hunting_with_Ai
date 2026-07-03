@@ -1,0 +1,91 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: ai-job-agent-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+      POSTGRES_DB: ai_job_agent
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ai_job_agent"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: ai-job-agent-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  brain-engine:
+    build:
+      context: ./brain-engine
+      dockerfile: Dockerfile
+    container_name: brain-engine
+    environment:
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - GROQ_MODEL=${GROQ_MODEL:-llama-3.3-70b-versatile}
+      - EMBEDDING_MODEL_NAME=all-MiniLM-L6-v2
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./brain-engine/resumes:/usr/src/app/brain-engine/resumes
+      - shared_storage:/usr/src/app/storage
+    restart: unless-stopped
+
+  automation-engine:
+    build:
+      context: ./automation-engine
+      dockerfile: Dockerfile
+    container_name: automation-engine
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DATABASE_URL=postgresql://postgres:postgrespassword@db:5432/ai_job_agent?schema=public
+      - REDIS_URL=redis://redis:6379
+      - BRAIN_ENGINE_URL=http://brain-engine:8000
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASS=${SMTP_PASS}
+      - NOTIFY_TO_EMAIL=${NOTIFY_TO_EMAIL}
+      - LINKEDIN_AUTOMATION_ENABLED=${LINKEDIN_AUTOMATION_ENABLED:-false}
+      - LINKEDIN_USERNAME=${LINKEDIN_USERNAME}
+      - LINKEDIN_PASSWORD=${LINKEDIN_PASSWORD}
+      - PLAYWRIGHT_HEADLESS=${PLAYWRIGHT_HEADLESS:-true}
+      - CANDIDATE_FIRST_NAME=${CANDIDATE_FIRST_NAME}
+      - CANDIDATE_LAST_NAME=${CANDIDATE_LAST_NAME}
+      - CANDIDATE_EMAIL=${CANDIDATE_EMAIL}
+      - CANDIDATE_PHONE=${CANDIDATE_PHONE}
+    ports:
+      - "3000:3000"
+    volumes:
+      - shared_storage:/usr/src/app/storage
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      brain-engine:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  shared_storage:
