@@ -57,10 +57,17 @@ export class ResumeWorker extends BaseWorker<ResumeJobData, void> {
     await this.applicationRepo.updateStatus(jobId, 'READY');
 
     // 6. Push to Apply Worker Queue
-    await applyQueue.add(`apply-submission-${jobId}`, {
-      jobId,
-    });
-    console.log(`🚀 [ResumeWorker] Job ID ${jobId} ready to apply. Enqueued to Apply queue.`);
+    if (env.AUTO_APPLY_ENABLED) {
+      await applyQueue.add(`apply-submission-${jobId}`, {
+        jobId,
+      });
+      console.log(`🚀 [ResumeWorker] Job ID ${jobId} ready to apply. Enqueued to Apply queue.`);
+    } else {
+      console.log(
+        `🛑 [ResumeWorker] Job ID ${jobId} is READY and awaiting manual approval ` +
+          `(AUTO_APPLY_ENABLED=false). Run "npm run approve" to review and submit it.`
+      );
+    }
   }
 }
 export default ResumeWorker;

@@ -13,7 +13,9 @@
     "test": "vitest run",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
-    "db:seed": "tsx db/seed.ts"
+    "db:seed": "tsx db/seed.ts",
+    "approve": "tsx src/approve.ts",
+    "trigger": "tsx src/trigger.ts",
   },
   "dependencies": {
     "@prisma/client": "^5.10.0",

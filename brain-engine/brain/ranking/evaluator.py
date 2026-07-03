@@ -9,7 +9,29 @@ class Evaluator:
         self.client = Groq(api_key=settings.GROQ_API_KEY)
 
     def evaluate_fit(self, job_title: str, job_description: str, resume_content: str) -> EvaluationResult:
-        """Evaluates how well a candidate's resume matches a job description using Groq."""
+        """Evaluates how well a candidate's resume matches a job description.
+
+        Runs a cheap local MiniLM cosine-similarity pass first. Jobs that are
+        obviously unrelated to the resume are rejected here without spending a
+        Groq call. Anything that clears the bar goes on to the full LLM grading
+        for a real score and explanation.
+        """
+        similarity = self.embedder.cosine_similarity(
+            self.embedder.embed_text(f"{job_title}\n{job_description}"),
+            self.embedder.embed_text(resume_content),
+        )
+
+        if similarity < settings.SEMANTIC_PREFILTER_THRESHOLD:
+            return EvaluationResult(
+                score=0.0,
+                explanation=(
+                    f"Rejected by semantic pre-filter (cosine similarity {similarity:.2f} "
+                    f"is below threshold {settings.SEMANTIC_PREFILTER_THRESHOLD}). "
+                    "Job description appears unrelated to the resume; skipped LLM grading."
+                ),
+                key_matches=[],
+                missing_keywords=[],
+            )
         max_retries = 5
         base_delay = 2.0
 

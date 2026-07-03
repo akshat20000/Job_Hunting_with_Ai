@@ -33,6 +33,11 @@ const envSchema = z.object({
     .transform((val) => val.toLowerCase() === 'true')
     .or(z.boolean())
     .default(false),
+  AUTO_APPLY_ENABLED: z
+    .string()
+    .transform((val) => val.toLowerCase() === 'true')
+    .or(z.boolean())
+    .default(false),  
   PLAYWRIGHT_HEADLESS: z
     .string()
     .transform((val) => val.toLowerCase() === 'true')

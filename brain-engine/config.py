@@ -5,6 +5,8 @@ class Settings(BaseSettings):
     GROQ_API_KEY: str = ""
     GROQ_MODEL: str = "llama-3.3-70b-versatile"
     EMBEDDING_MODEL_NAME: str = "all-MiniLM-L6-v2"
+    SEMANTIC_PREFILTER_THRESHOLD: float = 0.30
+
     MASTER_RESUME_PATH: str = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
         "brain-engine", 
