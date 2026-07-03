@@ -15,7 +15,7 @@
     "db:migrate": "prisma migrate dev",
     "db:seed": "tsx db/seed.ts",
     "approve": "tsx src/approve.ts",
-    "trigger": "tsx src/trigger.ts",
+    "trigger": "tsx src/trigger.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.10.0",
