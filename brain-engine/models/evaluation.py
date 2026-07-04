@@ -4,7 +4,7 @@ from typing import List, Optional
 class EvaluationRequest(BaseModel):
     job_title: str
     job_description: str
-    resume_content: str
+    resume_content: Optional[str]=None
 
 class EvaluationResult(BaseModel):
     score: float = Field(..., description="Job fit score between 0 and 100")

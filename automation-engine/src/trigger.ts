@@ -8,13 +8,13 @@ async function triggerFirstScrape() {
 
   // Define what you want to search for
   const payload = {
-    boards: ['greenhouse', 'lever'], // Start with these; linkedin requires logins/cookies
-    searchQuery: 'Software Developer',
-    location: 'Remote',
+    boards: ['greenhouse', 'lever', 'adzuna'],
+    searchQueries: ['Software Engineer'],
+    locations: ['Remote', 'India'],
     limit: 5
   };
 
-  console.log(`🚀 Dispatching scrape job for: "${payload.searchQuery}"...`);
+  console.log(`🚀 Dispatching scrape job for: "${payload.searchQueries}"...`);
   
   await scrapeQueue.add('manual-trigger-scrape', payload);
 

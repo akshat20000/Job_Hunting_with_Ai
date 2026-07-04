@@ -37,13 +37,16 @@ const envSchema = z.object({
     .string()
     .transform((val) => val.toLowerCase() === 'true')
     .or(z.boolean())
-    .default(false),  
+    .default(false),
   PLAYWRIGHT_HEADLESS: z
     .string()
     .transform((val) => val.toLowerCase() === 'true')
     .or(z.boolean())
     .default(true),
   STORAGE_DIR: z.string().default(path.join(process.cwd(), 'storage')),
+  ADZUNA_APP_ID: z.string().default(''),
+  ADZUNA_APP_KEY: z.string().default(''),
+  ADZUNA_COUNTRY: z.string().default('us'),
 });
 
 const parseEnv = () => {

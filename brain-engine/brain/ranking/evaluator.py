@@ -3,10 +3,12 @@ import time
 from groq import Groq
 from config import settings
 from models.evaluation import EvaluationResult
+from brain.embedding.embedder import Embedder
 
 class Evaluator:
     def __init__(self):
         self.client = Groq(api_key=settings.GROQ_API_KEY)
+        self.embedder = Embedder()
 
     def evaluate_fit(self, job_title: str, job_description: str, resume_content: str) -> EvaluationResult:
         """Evaluates how well a candidate's resume matches a job description.

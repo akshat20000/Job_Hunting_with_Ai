@@ -20,7 +20,7 @@ export abstract class BaseWorker<TData = any, TResult = any> {
           return result;
         } catch (error: any) {
           console.error(`❌ [Worker - ${queueName}] Failed job ID ${job.id}:`, error.message);
-          await this.handleFailure(job, error);
+          //await this.handleFailure(job, error);
           throw error; // Re-throw to trigger BullMQ's automatic retry backoffs
         }
       },
@@ -32,7 +32,21 @@ export abstract class BaseWorker<TData = any, TResult = any> {
     );
 
     this.worker.on('failed', (job, err) => {
-      console.error(`🚨 [Worker - ${queueName}] Job ID ${job?.id} failed permanently: ${err.message}`);
+      if (!job) return;
+
+      const attemptsMade = job.attemptsMade ?? 0;
+      const maxAttempts = job.opts?.attempts ?? 1;
+
+      if (attemptsMade >= maxAttempts) {
+        console.error(`🚨 [Worker - ${queueName}] Job ID ${job.id} failed permanently: ${err.message}`);
+        this.handleFailure(job, err).catch((dbErr) =>
+          console.error(`⚠️ [BaseWorker] handleFailure itself threw for job ${job.id}:`, dbErr)
+        );
+      } else {
+        console.log(
+          `🔁 [Worker - ${queueName}] Job ID ${job.id} failed attempt ${attemptsMade}/${maxAttempts}, will retry: ${err.message}`
+        );
+      }
     });
   }
 

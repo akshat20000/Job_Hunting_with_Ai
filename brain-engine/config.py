@@ -8,9 +8,8 @@ class Settings(BaseSettings):
     SEMANTIC_PREFILTER_THRESHOLD: float = 0.30
 
     MASTER_RESUME_PATH: str = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
-        "brain-engine", 
-        "resumes", 
+        os.path.dirname(os.path.abspath(__file__)),
+        "resumes",
         "master.md"
     )
     HOST: str = "0.0.0.0"

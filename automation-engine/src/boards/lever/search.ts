@@ -1,65 +1,79 @@
-import { browserPool } from '../../browser/browserPool.js';
-import { parseLeverJobPage, LeverParsedJob } from './parser.js';
+import { LeverParsedJob } from './parser.js';
+import { LEVER_COMPANY_WATCHLIST } from '../../config/companyWatchlist.js';
 
+interface LeverApiJob {
+  id: string;
+  text: string;
+  hostedUrl: string;
+  categories?: { location?: string; team?: string; commitment?: string };
+  descriptionPlain?: string;
+  lists?: { text: string; content: string }[];
+}
+
+function stripHtml(html: string): string {
+  return html.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Polls Lever's public job-postings API directly for each company in the
+ * watchlist, instead of scraping a search engine. No browser, no bot
+ * detection risk — this is a plain, unauthenticated JSON endpoint meant to
+ * be queried programmatically.
+ */
 export async function scrapeLever(
   query: string,
   limit = 5
 ): Promise<(LeverParsedJob & { url: string })[]> {
-  console.log(`🔍 [Lever Search] Starting DuckDuckGo search query for Lever board matching: "${query}"`);
-  
-  const context = await browserPool.newContext();
-  const page = await context.newPage();
+  console.log(
+    `🔍 [Lever Search] Polling ${LEVER_COMPANY_WATCHLIST.length} company board(s) directly for: "${query}"`
+  );
+
   const results: (LeverParsedJob & { url: string })[] = [];
+  const queryLower = query.toLowerCase();
 
-  try {
-    const queryStr = `site:jobs.lever.co ${query}`;
-    const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(queryStr)}`;
-    await page.goto(searchUrl, { waitUntil: 'load' });
-    await browserPool.randomDelay(2000, 3500);
+  for (const company of LEVER_COMPANY_WATCHLIST) {
+    if (results.length >= limit) break;
+    try {
+      const apiUrl = `https://api.lever.co/v0/postings/${company}?mode=json`;
+      const response = await fetch(apiUrl);
 
-    const anchorElements = page.locator('a.result__url');
-    const count = await anchorElements.count();
-    console.log(`📊 [Lever Search] Found ${count} raw results on DuckDuckGo.`);
-
-    const targetUrls: string[] = [];
-    for (let i = 0; i < count; i++) {
-      const href = (await anchorElements.nth(i).getAttribute('href').catch(() => '')) || '';
-      
-      const urlParts = href.split('/');
-      if (href.includes('jobs.lever.co') && urlParts.length >= 5) {
-        const cleaned = href.split('?')[0];
-        if (!targetUrls.includes(cleaned)) {
-          targetUrls.push(cleaned);
-        }
+      if (!response.ok) {
+        console.warn(`⚠️ [Lever Search] Company "${company}" returned HTTP ${response.status}, skipping.`);
+        continue;
       }
-    }
 
-    console.log(`📊 [Lever Search] Extracted ${targetUrls.length} unique Lever job URL nodes.`);
+      const jobs = (await response.json()) as LeverApiJob[];
+      const matches = jobs.filter((job) => job.text.toLowerCase().includes(queryLower));
 
-    const parseLimit = Math.min(targetUrls.length, limit);
-    for (let i = 0; i < parseLimit; i++) {
-      const url = targetUrls[i];
-      try {
-        console.log(`🔍 [Lever Search] Fetching job card ${i + 1}/${parseLimit}: ${url}`);
-        await page.goto(url, { waitUntil: 'load' });
-        await browserPool.randomDelay(1500, 2500);
+      console.log(
+        `📊 [Lever Search] "${company}": ${jobs.length} total job(s), ${matches.length} matching "${query}".`
+      );
 
-        const details = await parseLeverJobPage(page);
+      const companyDisplayName = company.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+
+      for (const job of matches) {
+        if (results.length >= limit) break;
+        const listText = (job.lists || [])
+          .map((l) => `${l.text}\n${stripHtml(l.content || '')}`)
+          .join('\n\n');
+        const fullDescription = [job.descriptionPlain, listText].filter(Boolean).join('\n\n');
+
         results.push({
-          ...details,
-          url,
+          title: job.text.trim(),
+          description: fullDescription || 'No Description Available',
+          companyName: companyDisplayName,
+          location: job.categories?.location,
+          companyWebsite: undefined,
+          salary: undefined,
+          url: job.hostedUrl,
         });
-      } catch (parseError: any) {
-        console.error(`⚠️ [Lever Search] Error details on link: ${url}`, parseError.message);
       }
+    } catch (err: any) {
+      console.error(`❌ [Lever Search] Failed to poll company "${company}":`, err.message);
     }
-  } catch (searchError: any) {
-    console.error('❌ [Lever Search] Search execution crashed:', searchError.message);
-  } finally {
-    await page.close().catch(() => {});
-    await context.close().catch(() => {});
   }
 
+  console.log(`✅ [Lever Search] Collected ${results.length} matching job(s) across all watched companies.`);
   return results;
 }
 

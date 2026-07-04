@@ -36,6 +36,8 @@ class PDFCompiler(FPDF):
                 .replace("\u2022", "*")
                 .replace("**", "")
                 .replace("*", "")
+                .replace("📞","Phone")
+                .replace("📧","mail")
             )
 
             if cleaned.startswith("# "):

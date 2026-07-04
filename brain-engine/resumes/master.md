@@ -1,7 +1,7 @@
 # Akshat Prashar
 
-📞 +91-78885-15352  
-📧 akshat1048.be23@chitkarauniversity.edu.in  
+ +91-78885-15352  
+ akshat1048.be23@chitkarauniversity.edu.in  
 
 - **GitHub:** https://github.com/akshat20000
 - **LeetCode:** https://leetcode.com/u/akshat_prashar_2710/

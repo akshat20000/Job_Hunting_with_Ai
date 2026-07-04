@@ -1,66 +1,83 @@
-import { browserPool } from '../../browser/browserPool.js';
-import { parseGreenhouseJobPage, GreenhouseParsedJob } from './parser.js';
+import { GreenhouseParsedJob } from './parser.js';
+import { GREENHOUSE_COMPANY_WATCHLIST } from '../../config/companyWatchlist.js';
 
+interface GreenhouseApiJob {
+  id: number;
+  title: string;
+  absolute_url: string;
+  location?: { name: string };
+  content?: string;
+}
+
+function stripHtml(html: string): string {
+  return html
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Polls Greenhouse's public job-board API directly for each company in the
+ * watchlist, instead of scraping a search engine. No browser, no bot
+ * detection risk — this is a plain, unauthenticated JSON endpoint meant to
+ * be queried programmatically.
+ */
 export async function scrapeGreenhouse(
   query: string,
   limit = 5
 ): Promise<(GreenhouseParsedJob & { url: string })[]> {
-  console.log(`🔍 [Greenhouse Search] Starting DuckDuckGo search query for Greenhouse board matching: "${query}"`);
-  
-  const context = await browserPool.newContext();
-  const page = await context.newPage();
+  console.log(
+    `🔍 [Greenhouse Search] Polling ${GREENHOUSE_COMPANY_WATCHLIST.length} company board(s) directly for: "${query}"`
+  );
+
   const results: (GreenhouseParsedJob & { url: string })[] = [];
+  const queryLower = query.toLowerCase();
 
-  try {
-    // Perform HTML-only DuckDuckGo search to avoid captcha/JS challenges
-    const queryStr = `site:boards.greenhouse.io ${query}`;
-    const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(queryStr)}`;
-    await page.goto(searchUrl, { waitUntil: 'load' });
-    await browserPool.randomDelay(2000, 3500);
+  for (const boardToken of GREENHOUSE_COMPANY_WATCHLIST) {
+    if (results.length >= limit) break;
+    try {
+      const apiUrl = `https://boards-api.greenhouse.io/v1/boards/${boardToken}/jobs?content=true`;
+      const response = await fetch(apiUrl);
 
-    const anchorElements = page.locator('a.result__url');
-    const count = await anchorElements.count();
-    console.log(`📊 [Greenhouse Search] Found ${count} raw results on index page.`);
-
-    const targetUrls: string[] = [];
-    for (let i = 0; i < count; i++) {
-      const href = (await anchorElements.nth(i).getAttribute('href').catch(() => '')) || '';
-      
-      // Filter link format to ensure it points to a specific job details page
-      if (href.includes('boards.greenhouse.io') && href.includes('/jobs/')) {
-        const cleaned = href.split('?')[0];
-        if (!targetUrls.includes(cleaned)) {
-          targetUrls.push(cleaned);
-        }
+      if (!response.ok) {
+        console.warn(`⚠️ [Greenhouse Search] Board "${boardToken}" returned HTTP ${response.status}, skipping.`);
+        continue;
       }
-    }
 
-    console.log(`📊 [Greenhouse Search] Extracted ${targetUrls.length} unique job URL nodes.`);
+      const data = (await response.json()) as { jobs: GreenhouseApiJob[] };
+      const jobs = data.jobs || [];
+      const matches = jobs.filter((job) => job.title.toLowerCase().includes(queryLower));
 
-    const parseLimit = Math.min(targetUrls.length, limit);
-    for (let i = 0; i < parseLimit; i++) {
-      const url = targetUrls[i];
-      try {
-        console.log(`🔍 [Greenhouse Search] Fetching job card ${i + 1}/${parseLimit}: ${url}`);
-        await page.goto(url, { waitUntil: 'load' });
-        await browserPool.randomDelay(1500, 2500);
+      console.log(
+        `📊 [Greenhouse Search] "${boardToken}": ${jobs.length} total job(s), ${matches.length} matching "${query}".`
+      );
 
-        const details = await parseGreenhouseJobPage(page);
+      const companyDisplayName = boardToken.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+
+      for (const job of matches) {
+        if (results.length >= limit) break;
         results.push({
-          ...details,
-          url,
+          title: job.title.trim(),
+          description: stripHtml(job.content || '') || 'No Description Available',
+          companyName: companyDisplayName,
+          location: job.location?.name,
+          companyWebsite: undefined,
+          salary: undefined,
+          url: job.absolute_url,
         });
-      } catch (parseError: any) {
-        console.error(`⚠️ [Greenhouse Search] Error details on link: ${url}`, parseError.message);
       }
+    } catch (err: any) {
+      console.error(`❌ [Greenhouse Search] Failed to poll board "${boardToken}":`, err.message);
     }
-  } catch (searchError: any) {
-    console.error('❌ [Greenhouse Search] Search execution crashed:', searchError.message);
-  } finally {
-    await page.close().catch(() => {});
-    await context.close().catch(() => {});
   }
 
+  console.log(`✅ [Greenhouse Search] Collected ${results.length} matching job(s) across all watched boards.`);
   return results;
 }
 
