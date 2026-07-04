@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 from main import app
 from models.evaluation import EvaluationResult
 
+
 client = TestClient(app)
 
 @patch("api.v1.evaluate.evaluator.evaluate_fit")

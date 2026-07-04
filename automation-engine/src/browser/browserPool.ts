@@ -2,7 +2,7 @@ import { chromium, Browser, BrowserContext } from 'playwright';
 import { playwrightConfig } from '../config/index.js';
 
 export class BrowserPool {
-  private browser: Browser | null = null;
+  private browser: Browser | null =  null;
 
   async getBrowser(): Promise<Browser> {
     if (!this.browser) {
