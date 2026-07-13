@@ -29,6 +29,41 @@ services:
       timeout: 5s
       retries: 5
 
+  # ── S3-compatible local storage (dev only — use real AWS in production) ───────
+  minio:
+    image: minio/minio:latest
+    container_name: ai-job-agent-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "9000:9000"   # S3 API endpoint
+      - "9001:9001"   # MinIO web console
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # One-shot init container — creates the S3 bucket in MinIO on first boot
+  minio-init:
+    image: minio/mc:latest
+    container_name: ai-job-agent-minio-init
+    depends_on:
+      minio:
+        condition: service_started
+    entrypoint: >
+      /bin/sh -c "
+        sleep 5;
+        mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-minioadmin} ${MINIO_ROOT_PASSWORD:-minioadmin};
+        mc mb --ignore-existing local/${S3_BUCKET_NAME:-ai-job-agent};
+        echo 'MinIO bucket ready.';
+      "
+    restart: "no"
+
   brain-engine:
     build:
       context: ./brain-engine
@@ -65,16 +100,25 @@ services:
       - SMTP_USER=${SMTP_USER}
       - SMTP_PASS=${SMTP_PASS}
       - NOTIFY_TO_EMAIL=${NOTIFY_TO_EMAIL}
-      - LINKEDIN_AUTOMATION_ENABLED=${LINKEDIN_AUTOMATION_ENABLED:-false}
-      - LINKEDIN_USERNAME=${LINKEDIN_USERNAME}
-      - LINKEDIN_PASSWORD=${LINKEDIN_PASSWORD}
+      - LINKEDIN_AUTOMATION_ENABLED=false
       - PLAYWRIGHT_HEADLESS=${PLAYWRIGHT_HEADLESS:-true}
       - CANDIDATE_FIRST_NAME=${CANDIDATE_FIRST_NAME}
       - CANDIDATE_LAST_NAME=${CANDIDATE_LAST_NAME}
       - CANDIDATE_EMAIL=${CANDIDATE_EMAIL}
       - CANDIDATE_PHONE=${CANDIDATE_PHONE}
+      # S3 / MinIO
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME:-ai-job-agent}
+      - S3_REGION=${S3_REGION:-us-east-1}
+      - S3_ENDPOINT=http://minio:9000
+      - AWS_ACCESS_KEY_ID=${MINIO_ROOT_USER:-minioadmin}
+      - AWS_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD:-minioadmin}
+      # Plans
+      - PREMIUM_DAILY_LIMIT=${PREMIUM_DAILY_LIMIT:-50}
+      # Phase 1 pipeline user
+      - DEFAULT_USER_ID=${DEFAULT_USER_ID}
     ports:
       - "3000:3000"
+      - "3001:3001"  # Multi-tenant API
     volumes:
       - ./storage:/usr/src/app/storage
     depends_on:
@@ -84,9 +128,35 @@ services:
         condition: service_healthy
       brain-engine:
         condition: service_started
+      minio:
+        condition: service_started
+    restart: unless-stopped
+
+  # ── Next.js Dashboard ────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        AUTOMATION_ENGINE_URL: http://automation-engine:3001
+        NEXTAUTH_URL: http://localhost:3002
+        NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+    container_name: ai-job-agent-frontend
+    environment:
+      - NODE_ENV=production
+      - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:3002}
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      - AUTOMATION_ENGINE_URL=http://automation-engine:3001
+      - NEXT_PUBLIC_API_URL=${NEXTAUTH_URL:-http://localhost:3002}
+    ports:
+      - "3002:3000"
+    depends_on:
+      - automation-engine
+      - db
     restart: unless-stopped
 
 volumes:
   postgres_data:
   redis_data:
+  minio_data:
   shared_storage:

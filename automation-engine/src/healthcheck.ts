@@ -101,27 +101,43 @@ export function startHealthCheckServer() {
 
     const resumeMatch = pathname.match(/^\/api\/jobs\/([^/]+)\/resume$/);
     if (resumeMatch && req.method === 'GET') {
-      const app = await prisma.application.findUnique({ where: { jobId: resumeMatch[1] } });
+    const app = await prisma.application.findFirst({ where: { jobId: resumeMatch[1] as string } });
       servePdf(res, app?.resumePath ?? null);
       return;
     }
 
     const coverMatch = pathname.match(/^\/api\/jobs\/([^/]+)\/cover-letter$/);
     if (coverMatch && req.method === 'GET') {
-      const app = await prisma.application.findUnique({ where: { jobId: coverMatch[1] } });
+    const app = await prisma.application.findFirst({ where: { jobId: coverMatch[1] as string } });
       servePdf(res, app?.coverLetterPath ?? null);
       return;
     }
 
     // --- Static dashboard page ---
+    // --- Static dashboard page (Deprecated: Redirects to Next.js Frontend) ---
     if (pathname === '/' || pathname === '/dashboard') {
-      const filePath = path.join(process.cwd(), 'public', 'dashboard.html');
-      if (fs.existsSync(filePath)) {
-        res.writeHead(200, { 'Content-Type': 'text/html' });
-        fs.createReadStream(filePath).pipe(res);
-      } else {
-        sendJson(res, 500, { error: 'dashboard.html not found in public/' });
-      }
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Dashboard Migrated</title>
+          <style>
+            body { background: #0a0e1a; color: #e2e8f0; font-family: system-ui, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+            .card { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); padding: 30px; border-radius: 12px; text-align: center; }
+            a { color: #63b3ed; text-decoration: none; font-weight: bold; }
+            a:hover { text-decoration: underline; }
+          </style>
+        </head>
+        <body>
+          <div class="card">
+            <h2>Dashboard has Migrated! 🚀</h2>
+            <p>The single-user HTML dashboard has been retired.</p>
+            <p>Access the new multi-tenant dashboard at <a href="http://localhost:3002/">http://localhost:3002</a></p>
+          </div>
+        </body>
+        </html>
+      `);
       return;
     }
 

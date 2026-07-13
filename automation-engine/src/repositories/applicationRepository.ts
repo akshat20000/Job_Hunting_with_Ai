@@ -1,24 +1,44 @@
 import { BaseRepository } from './baseRepository.js';
 import { Application, Job } from '@prisma/client';
 
-export type ApplicationWithJob = Application & { job: Job };
+export type ApplicationWithJob = Application & { job: Job & { company: { name: string } } };
 
 export class ApplicationRepository extends BaseRepository {
   async findById(id: string): Promise<ApplicationWithJob | null> {
     return this.prisma.application.findUnique({
       where: { id },
-      include: { job: true },
+      include: { job: { include: { company: true } } },
     });
   }
 
-  async findByJobId(jobId: string): Promise<ApplicationWithJob | null> {
+  async findByUserAndJobId(userId: string, jobId: string): Promise<ApplicationWithJob | null> {
     return this.prisma.application.findUnique({
+      where: { userId_jobId: { userId, jobId } },
+      include: { job: { include: { company: true } } },
+    });
+  }
+
+  /**
+   * @deprecated Use findByUserAndJobId instead. Retained for backward compatibility
+   * in workers that haven't been threaded with userId yet.
+   */
+  async findByJobId(jobId: string): Promise<ApplicationWithJob | null> {
+    return this.prisma.application.findFirst({
       where: { jobId },
-      include: { job: true },
+      include: { job: { include: { company: true } } },
+    });
+  }
+
+  async findByUserId(userId: string): Promise<ApplicationWithJob[]> {
+    return this.prisma.application.findMany({
+      where: { userId },
+      include: { job: { include: { company: true } } },
+      orderBy: [{ job: { score: 'desc' } }, { createdAt: 'desc' }],
     });
   }
 
   async upsert(
+    userId: string,
     jobId: string,
     data: {
       status?: string;
@@ -30,7 +50,7 @@ export class ApplicationRepository extends BaseRepository {
     }
   ): Promise<Application> {
     return this.prisma.application.upsert({
-      where: { jobId },
+      where: { userId_jobId: { userId, jobId } },
       update: {
         status: data.status,
         appliedAt: data.appliedAt,
@@ -40,6 +60,7 @@ export class ApplicationRepository extends BaseRepository {
         errorDetails: data.errorDetails,
       },
       create: {
+        userId,
         jobId,
         status: data.status || 'FOUND',
         appliedAt: data.appliedAt,
@@ -52,46 +73,59 @@ export class ApplicationRepository extends BaseRepository {
   }
 
   async updateStatus(
+    userId: string,
     jobId: string,
     status: string,
-    extra: Partial<Omit<Application, 'id' | 'jobId' | 'createdAt' | 'updatedAt'>> = {}
+    extra: Partial<Omit<Application, 'id' | 'userId' | 'jobId' | 'createdAt' | 'updatedAt'>> = {}
   ): Promise<Application> {
     return this.prisma.application.update({
-      where: { jobId },
-      data: {
-        status,
-        ...extra,
-      },
+      where: { userId_jobId: { userId, jobId } },
+      data: { status, ...extra },
     });
   }
 
-  async updateArtifacts(jobId: string, resumePath: string, coverLetterPath: string): Promise<Application> {
+  async updateArtifacts(
+    userId: string,
+    jobId: string,
+    resumePath: string,
+    coverLetterPath: string
+  ): Promise<Application> {
     return this.prisma.application.update({
-      where: { jobId },
-      data: {
-        resumePath,
-        coverLetterPath,
-      },
+      where: { userId_jobId: { userId, jobId } },
+      data: { resumePath, coverLetterPath },
     });
   }
 
-  async markApplied(jobId: string, screenshotPath: string): Promise<Application> {
+  async markApplied(userId: string, jobId: string, screenshotPath: string): Promise<Application> {
     return this.prisma.application.update({
-      where: { jobId },
+      where: { userId_jobId: { userId, jobId } },
       data: {
-        status: 'SUBMITTED',
+        status: 'APPLIED',
         appliedAt: new Date(),
         screenshotPath,
       },
     });
   }
 
-  async markFailed(jobId: string, errorDetails: string): Promise<Application> {
+  async markFailed(userId: string, jobId: string, errorDetails: string): Promise<Application> {
     return this.prisma.application.update({
-      where: { jobId },
-      data: {
-        status: 'FAILED',
-        errorDetails,
+      where: { userId_jobId: { userId, jobId } },
+      data: { status: 'FAILED', errorDetails },
+    });
+  }
+
+  /**
+   * Count how many applications this user has submitted today.
+   * Used by UsageLimiter to enforce daily plan caps.
+   */
+  async countTodayApplications(userId: string): Promise<number> {
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    return this.prisma.application.count({
+      where: {
+        userId,
+        status: { in: ['APPLYING', 'APPLIED'] },
+        createdAt: { gte: startOfDay },
       },
     });
   }

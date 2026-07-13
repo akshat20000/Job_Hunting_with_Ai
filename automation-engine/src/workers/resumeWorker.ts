@@ -4,21 +4,25 @@ import { QUEUES } from '../queue/constants.js';
 import { applyQueue } from '../queue/jobQueues.js';
 import { brainEngineClient } from '../clients/brainEngineClient.js';
 import { ApplicationStateMachine } from '../domain/ApplicationStateMachine.js';
+import { ResumeRepository } from '../repositories/resumeRepository.js';
 import { env } from '../config/index.js';
 import path from 'path';
 
 export interface ResumeJobData {
   jobId: string;
+  userId: string;
 }
 
 export class ResumeWorker extends BaseWorker<ResumeJobData, void> {
+  private resumeRepo = new ResumeRepository();
+
   constructor() {
     super(QUEUES.TAILOR);
   }
 
   protected async processJob(job: BullJob<ResumeJobData, void>): Promise<void> {
-    const { jobId } = job.data;
-    console.log(`📄 [ResumeWorker] Tailoring resume/cover letter for Job ID: ${jobId}`);
+    const { jobId, userId } = job.data;
+    console.log(`📄 [ResumeWorker] Tailoring resume/cover letter for Job ID: ${jobId} (User: ${userId})`);
 
     // 1. Fetch job with company metadata
     const dbJob = await this.jobRepo.findById(jobId);
@@ -26,16 +30,23 @@ export class ResumeWorker extends BaseWorker<ResumeJobData, void> {
       throw new Error(`Job listing with ID ${jobId} was not found in the DB.`);
     }
 
+    // 2. Load user's active resume text for tailoring
+    const activeResume = await this.resumeRepo.findActiveByUser(userId);
+    if (!activeResume) {
+      console.warn(`⚠️ [ResumeWorker] No active resume for user ${userId}. Falling back to master resume.`);
+    }
+
     const stateMachine = new ApplicationStateMachine(dbJob.status as any);
 
-    // 2. Prepare the local target folder for pdf outputs
+    // 3. Prepare the local target folder for PDF outputs
     const targetStoragePath = path.join(env.STORAGE_DIR, 'applications', jobId);
 
-    // 3. Command brain engine to compile tailored files
+    // 4. Command brain engine to compile tailored files — pass resume_content per-request
     const result = await brainEngineClient.generateArtifacts({
       job_title: dbJob.title,
       company_name: dbJob.company.name,
       job_description: dbJob.description,
+      resume_content: activeResume?.content ?? '',
       output_dir: targetStoragePath,
     });
 
@@ -43,29 +54,30 @@ export class ResumeWorker extends BaseWorker<ResumeJobData, void> {
     console.log(`   - Resume: ${result.resume_pdf_path}`);
     console.log(`   - Cover Letter: ${result.cover_letter_pdf_path}`);
 
-    // 4. Transition MATCHED -> TAILORED
+    // 5. Transition MATCHED -> TAILORED
     stateMachine.transitionTo('TAILORED');
     await this.jobRepo.updateStatus(jobId, 'TAILORED');
-    await this.applicationRepo.updateStatus(jobId, 'TAILORED', {
+    await this.applicationRepo.updateStatus(userId, jobId, 'TAILORED', {
       resumePath: result.resume_pdf_path,
       coverLetterPath: result.cover_letter_pdf_path,
     });
 
-    // 5. Transition TAILORED -> READY (Meaning artifacts are built and checked out)
+    // 6. Transition TAILORED -> READY (Meaning artifacts are built and checked out)
     stateMachine.transitionTo('READY');
     await this.jobRepo.updateStatus(jobId, 'READY');
-    await this.applicationRepo.updateStatus(jobId, 'READY');
+    await this.applicationRepo.updateStatus(userId, jobId, 'READY');
 
-    // 6. Push to Apply Worker Queue
+    // 7. Push to Apply Worker Queue
+    //    Note: LinkedIn jobs will be blocked in applyWorker — they stay READY
+    //    for manual review. We still enqueue here if AUTO_APPLY_ENABLED is true;
+    //    the applyWorker's LinkedIn guard is the definitive enforcement point.
     if (env.AUTO_APPLY_ENABLED) {
-      await applyQueue.add(`apply-submission-${jobId}`, {
-        jobId,
-      });
+      await applyQueue.add(`apply-submission-${jobId}`, { jobId, userId });
       console.log(`🚀 [ResumeWorker] Job ID ${jobId} ready to apply. Enqueued to Apply queue.`);
     } else {
       console.log(
         `🛑 [ResumeWorker] Job ID ${jobId} is READY and awaiting manual approval ` +
-          `(AUTO_APPLY_ENABLED=false). Run "npm run approve" to review and submit it.`
+          `(AUTO_APPLY_ENABLED=false). Use the dashboard to approve.`
       );
     }
   }

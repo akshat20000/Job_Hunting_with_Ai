@@ -57,7 +57,11 @@ export abstract class BaseWorker<TData = any, TResult = any> {
     if (data && data.jobId) {
       try {
         // Log details to Database and Application
-        await this.applicationRepo.markFailed(data.jobId, error.message);
+        // userId is now required for Application lookups; fall back to empty string if missing
+        const userId = data.userId ?? '';
+        if (userId) {
+          await this.applicationRepo.markFailed(userId, data.jobId, error.message);
+        }
         await this.jobRepo.updateStatus(data.jobId, 'FAILED');
 
         // Queue a notification job about the failure

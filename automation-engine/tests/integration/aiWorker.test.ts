@@ -28,6 +28,19 @@ vi.mock('../../src/repositories/applicationRepository.js', () => {
   };
 });
 
+vi.mock('../../src/repositories/resumeRepository.js', () => {
+  return {
+    ResumeRepository: vi.fn().mockImplementation(() => ({
+      findActiveByUser: vi.fn().mockResolvedValue({
+        id: 'resume-1',
+        parsedText: 'Candidate: Senior engineer with Python expertise.',
+        content: 'Candidate: Senior engineer with Python expertise.',
+        isActive: true,
+      }),
+    })),
+  };
+});
+
 vi.mock('../../src/clients/brainEngineClient.js', () => {
   return {
     brainEngineClient: {
@@ -64,7 +77,8 @@ describe('AIWorker Integration', () => {
   it('should process job details, update fit score, and transition to MATCHED state when score >= 70', async () => {
     const bullJob = {
       id: 'bull-job-1',
-      data: { jobId: 'job-uuid-123' },
+      // Now includes userId in the job data
+      data: { jobId: 'job-uuid-123', userId: 'user-uuid-1' },
     } as any;
 
     // Simulate high score match
@@ -79,9 +93,11 @@ describe('AIWorker Integration', () => {
     await worker['processJob'](bullJob);
 
     expect(worker['jobRepo'].findById).toHaveBeenCalledWith('job-uuid-123');
+    // Now expects resume_content to be passed (from the mocked active resume)
     expect(brainEngineClient.evaluateFit).toHaveBeenCalledWith({
       job_title: 'Backend Dev',
       job_description: 'Node, TS, Postgres',
+      resume_content: 'Candidate: Senior engineer with Python expertise.',
     });
     expect(worker['jobRepo'].updateScore).toHaveBeenCalledWith(
       'job-uuid-123',
@@ -89,7 +105,12 @@ describe('AIWorker Integration', () => {
       'Candidate lists Node.js and TypeScript extensively.'
     );
     expect(worker['jobRepo'].updateStatus).toHaveBeenCalledWith('job-uuid-123', 'MATCHED');
-    expect(worker['applicationRepo'].updateStatus).toHaveBeenCalledWith('job-uuid-123', 'MATCHED');
+    // updateStatus now takes (userId, jobId, status)
+    expect(worker['applicationRepo'].updateStatus).toHaveBeenCalledWith(
+      'user-uuid-1',
+      'job-uuid-123',
+      'MATCHED'
+    );
     expect(tailorQueue.add).toHaveBeenCalled();
   });
 });

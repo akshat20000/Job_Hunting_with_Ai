@@ -47,6 +47,22 @@ const envSchema = z.object({
   ADZUNA_APP_ID: z.string().default(''),
   ADZUNA_APP_KEY: z.string().default(''),
   ADZUNA_COUNTRY: z.string().default('us'),
+
+  // ── S3 / MinIO storage ───────────────────────────────────────────────────
+  S3_BUCKET_NAME: z.string().default('ai-job-agent'),
+  S3_REGION: z.string().default('us-east-1'),
+  // When set, overrides the default AWS endpoint (used for local MinIO)
+  S3_ENDPOINT: z.string().optional(),
+  AWS_ACCESS_KEY_ID: z.string().default('minioadmin'),
+  AWS_SECRET_ACCESS_KEY: z.string().default('minioadmin'),
+
+  // ── Plan limits ──────────────────────────────────────────────────────────
+  PREMIUM_DAILY_LIMIT: z.coerce.number().default(50),
+
+  // ── Default user for single-pipeline Phase 1 scraping ───────────────────
+  // Workers write Application rows keyed by userId; this env var provides
+  // the fallback userId for the shared scrape → evaluate → tailor pipeline.
+  DEFAULT_USER_ID: z.string().optional(),
 });
 
 const parseEnv = () => {

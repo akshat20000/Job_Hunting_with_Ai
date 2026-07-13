@@ -1,42 +1,55 @@
-export type ApplicationState = 'FOUND' | 'MATCHED' | 'TAILORED' | 'READY' | 'APPLYING' | 'SUBMITTED' | 'FAILED';
+export type ApplicationState =
+  | 'FOUND'
+  | 'MATCHED'
+  | 'TAILORED'
+  | 'READY'
+  | 'APPLYING'
+  | 'RETRYING'
+  | 'APPLIED'
+  | 'FAILED';
+
+export class InvalidStateTransitionError extends Error {
+  constructor(from: ApplicationState | string, to: ApplicationState | string) {
+    super(`Invalid state transition: Cannot transition from ${from} to ${to}`);
+    this.name = 'InvalidStateTransitionError';
+  }
+}
 
 export class ApplicationStateMachine {
   private currentState: ApplicationState;
 
-  constructor(initialState: ApplicationState = 'FOUND') {
+  // Full pipeline adjacency: FOUND -> MATCHED -> TAILORED -> READY -> APPLYING -> APPLIED
+  // with FAILED reachable from any non-terminal state, and RETRYING looping back to APPLYING.
+  private static readonly allowedTransitions: Record<ApplicationState, Set<ApplicationState>> = {
+    'FOUND':    new Set(['MATCHED', 'FAILED']),
+    'MATCHED':  new Set(['TAILORED', 'FAILED']),
+    'TAILORED': new Set(['READY', 'FAILED']),
+    'READY':    new Set(['APPLYING', 'FAILED']),
+    'APPLYING': new Set(['APPLIED', 'RETRYING', 'FAILED']),
+    'RETRYING': new Set(['APPLYING', 'FAILED']),
+    'APPLIED':  new Set([]),
+    'FAILED':   new Set([]),
+  };
+
+  constructor(initialState: ApplicationState) {
     this.currentState = initialState;
   }
 
-  getCurrentState(): ApplicationState {
-    return this.currentState;
-  }
+  public transitionTo(nextState: ApplicationState): void {
+    const allowedNextStates = ApplicationStateMachine.allowedTransitions[this.currentState];
 
-  static getValidTransitions(state: ApplicationState): ApplicationState[] {
-    switch (state) {
-      case 'FOUND':
-        return ['MATCHED', 'FAILED'];
-      case 'MATCHED':
-        return ['TAILORED', 'FAILED'];
-      case 'TAILORED':
-        return ['READY', 'FAILED'];
-      case 'READY':
-        return ['APPLYING', 'FAILED'];
-      case 'APPLYING':
-        return ['SUBMITTED', 'FAILED'];
-      case 'SUBMITTED':
-        return [];
-      case 'FAILED':
-        return [];
-      default:
-        return [];
+    if (!allowedNextStates || !allowedNextStates.has(nextState)) {
+      throw new InvalidStateTransitionError(this.currentState, nextState);
     }
-  }
 
-  transitionTo(nextState: ApplicationState): void {
-    const valid = ApplicationStateMachine.getValidTransitions(this.currentState);
-    if (!valid.includes(nextState)) {
-      throw new Error(`Invalid state transition: Cannot transition from ${this.currentState} to ${nextState}`);
-    }
     this.currentState = nextState;
+  }
+
+  public isTerminal(): boolean {
+    return this.currentState === 'APPLIED' || this.currentState === 'FAILED';
+  }
+
+  public get state(): ApplicationState {
+    return this.currentState;
   }
 }

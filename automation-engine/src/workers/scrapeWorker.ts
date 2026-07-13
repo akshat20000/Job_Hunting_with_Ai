@@ -3,6 +3,7 @@ import { Job as BullJob } from 'bullmq';
 import { QUEUES } from '../queue/constants.js';
 import { aiQueue } from '../queue/jobQueues.js';
 import { CompanyRepository } from '../repositories/companyRepository.js';
+import { env } from '../config/index.js';
 
 // Board-specific scraper modules (to be implemented in Group 8)
 import { scrapeLinkedIn } from '../boards/linkedin/search.js';
@@ -15,6 +16,8 @@ export interface ScrapeJobData {
   searchQueries?: string[];
   locations?: string[];
   limit?: number;
+  /** userId to associate scraped applications with. Falls back to DEFAULT_USER_ID env var. */
+  userId?: string;
 }
 
 export class ScrapeWorker extends BaseWorker<ScrapeJobData, void> {
@@ -30,18 +33,27 @@ export class ScrapeWorker extends BaseWorker<ScrapeJobData, void> {
       searchQueries = ['Software Engineer'],
       locations = ['Remote'],
       limit = 5,
+      userId: jobUserId,
     } = job.data;
+
+    // Phase 1: single-pipeline simplification. Applications are written with a userId.
+    // The userId comes from either the job payload (future per-user scrape) or
+    // the DEFAULT_USER_ID env var (single pipeline for dev/demo).
+    const userId = jobUserId ?? env.DEFAULT_USER_ID;
+    if (!userId) {
+      throw new Error(
+        'ScrapeWorker: no userId in job data and DEFAULT_USER_ID env var is not set. ' +
+        'Set DEFAULT_USER_ID to the demo user ID or pass userId in the scrape job payload.'
+      );
+    }
 
     console.log(
       `🔍 [ScrapeWorker] Executing scrape for boards: ${boards.join(', ')} | ` +
-      `Queries: ${searchQueries.join(', ')} | Locations: ${locations.join(', ')}`
+      `Queries: ${searchQueries.join(', ')} | Locations: ${locations.join(', ')} | User: ${userId}`
     );
 
     for (const board of boards) {
       for (const searchQuery of searchQueries) {
-        // Greenhouse/Lever are polled per-company and don't take a location
-        // filter, so looping locations for them would just repeat identical
-        // calls. Only Adzuna actually uses location, so only it loops there.
         const locationsToTry = board === 'adzuna' ? locations : [locations[0]];
 
         for (const location of locationsToTry) {
@@ -84,14 +96,15 @@ export class ScrapeWorker extends BaseWorker<ScrapeJobData, void> {
                 status: 'FOUND',
               });
 
-              // 4. Create Application record matching state machine
-              await this.applicationRepo.upsert(newJob.id, {
+              // 4. Create Application record — now keyed by userId + jobId
+              await this.applicationRepo.upsert(userId, newJob.id, {
                 status: 'FOUND',
               });
 
-              // 5. Delegate to AI evaluation queue
+              // 5. Delegate to AI evaluation queue (pass userId through pipeline)
               await aiQueue.add(`ai-evaluate-${newJob.id}`, {
                 jobId: newJob.id,
+                userId,
               });
               console.log(`🤖 [ScrapeWorker] Enqueued Job ID ${newJob.id} for fit evaluation.`);
             }
