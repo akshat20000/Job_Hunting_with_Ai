@@ -1,7 +1,7 @@
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { redirect } from 'next/navigation';
-import { getApplications, getUsage } from '@/lib/api';
+import { getApplications, getUsage, getResumes, getSearchProfile } from '@/lib/api';
 import DashboardClient from './DashboardClient';
 
 export const metadata = {
@@ -16,10 +16,15 @@ export default async function DashboardPage() {
   const userId = (session.user as any).id as string;
   const plan = (session.user as any).plan as string;
 
-  const [applications, usage] = await Promise.all([
+  const [applications, usage, resumes, searchProfile] = await Promise.all([
     getApplications(userId),
     getUsage(userId),
+    getResumes(userId),
+    getSearchProfile(userId),
   ]);
+
+  const hasResume = resumes.some(r => r.isActive);
+  const hasSearchProfile = searchProfile.titles.length > 0;
 
   return (
     <DashboardClient
@@ -27,6 +32,8 @@ export default async function DashboardPage() {
       usage={usage}
       userName={session.user?.name ?? session.user?.email ?? 'there'}
       plan={plan}
+      hasResume={hasResume}
+      hasSearchProfile={hasSearchProfile}
     />
   );
 }

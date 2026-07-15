@@ -27,6 +27,7 @@ async function bootstrap() {
     console.log(`   Applications:   GET  http://localhost:${API_PORT}/api/me/applications`);
     console.log(`   Resumes:        POST http://localhost:${API_PORT}/api/me/resumes`);
     console.log(`   Search Profile: GET  http://localhost:${API_PORT}/api/me/search-profile`);
+    console.log(`   Start Search:   POST http://localhost:${API_PORT}/api/me/search/start`);
   });
 
   // 3. Spin up queue workers to start listening for BullMQ dispatches

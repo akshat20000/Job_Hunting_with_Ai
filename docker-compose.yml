@@ -29,7 +29,7 @@ services:
       timeout: 5s
       retries: 5
 
-  # ── S3-compatible local storage (dev only — use real AWS in production) ───────
+  # ── S3-compatible local storage ─────────────────────────────────────────────
   minio:
     image: minio/minio:latest
     container_name: ai-job-agent-minio
@@ -48,16 +48,14 @@ services:
       timeout: 5s
       retries: 5
 
-  # One-shot init container — creates the S3 bucket in MinIO on first boot
   minio-init:
     image: minio/mc:latest
     container_name: ai-job-agent-minio-init
     depends_on:
       minio:
-        condition: service_started
+        condition: service_healthy  
     entrypoint: >
       /bin/sh -c "
-        sleep 5;
         mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-minioadmin} ${MINIO_ROOT_PASSWORD:-minioadmin};
         mc mb --ignore-existing local/${S3_BUCKET_NAME:-ai-job-agent};
         echo 'MinIO bucket ready.';
@@ -106,19 +104,16 @@ services:
       - CANDIDATE_LAST_NAME=${CANDIDATE_LAST_NAME}
       - CANDIDATE_EMAIL=${CANDIDATE_EMAIL}
       - CANDIDATE_PHONE=${CANDIDATE_PHONE}
-      # S3 / MinIO
       - S3_BUCKET_NAME=${S3_BUCKET_NAME:-ai-job-agent}
       - S3_REGION=${S3_REGION:-us-east-1}
       - S3_ENDPOINT=http://minio:9000
       - AWS_ACCESS_KEY_ID=${MINIO_ROOT_USER:-minioadmin}
       - AWS_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD:-minioadmin}
-      # Plans
       - PREMIUM_DAILY_LIMIT=${PREMIUM_DAILY_LIMIT:-50}
-      # Phase 1 pipeline user
       - DEFAULT_USER_ID=${DEFAULT_USER_ID}
     ports:
       - "3000:3000"
-      - "3001:3001"  # Multi-tenant API
+      - "3001:3001"
     volumes:
       - ./storage:/usr/src/app/storage
     depends_on:
@@ -129,10 +124,9 @@ services:
       brain-engine:
         condition: service_started
       minio:
-        condition: service_started
+        condition: service_healthy  
     restart: unless-stopped
 
-  # ── Next.js Dashboard ────────────────────────────────────────────────────────
   frontend:
     build:
       context: ./frontend
@@ -155,4 +149,3 @@ volumes:
   postgres_data:
   redis_data:
   minio_data:
-  shared_storage:

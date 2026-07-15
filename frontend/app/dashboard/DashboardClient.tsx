@@ -49,14 +49,19 @@ interface Props {
   usage: UsageStats;
   userName: string;
   plan: string;
+  hasResume: boolean;
+  hasSearchProfile: boolean;
 }
 
-export default function DashboardClient({ applications, usage, userName }: Props) {
+export default function DashboardClient({ applications, usage, userName, hasResume, hasSearchProfile }: Props) {
   const { data: session } = useSession();
   const userId = (session?.user as any)?.id as string | undefined;
   const [filter, setFilter] = useState<Filter>('all');
   const [approving, setApproving] = useState<string | null>(null);
   const [message, setMessage] = useState<{ text: string; type: 'ok' | 'err' } | null>(null);
+  const [searching, setSearching] = useState(false);
+
+  const canSearch = hasResume && hasSearchProfile;
 
   const filtered = applications.filter(a => {
     if (filter === 'all') return true;
@@ -74,6 +79,25 @@ export default function DashboardClient({ applications, usage, userName }: Props
     applied: applications.filter(a => a.status === 'APPLIED').length,
     linkedin: applications.filter(a => a.status === 'READY' && a.job.isLinkedIn).length,
   };
+
+  async function handleStartSearch() {
+    if (!userId || !canSearch) return;
+    setSearching(true);
+    setMessage(null);
+    try {
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_AUTOMATION_API ?? 'http://localhost:3001'}/api/me/search/start`,
+        { method: 'POST', headers: { 'X-User-Id': userId } }
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setMessage({ text: `✓ ${data.message}`, type: 'ok' });
+    } catch (err: any) {
+      setMessage({ text: err.message, type: 'err' });
+    } finally {
+      setSearching(false);
+    }
+  }
 
   async function handleApprove(app: ApiApplication) {
     if (!userId) return;
@@ -124,9 +148,31 @@ export default function DashboardClient({ applications, usage, userName }: Props
       </nav>
 
       <main className="container" style={{ paddingBottom: 60, flex: 1 }}>
-        <div className="page-header">
-          <h1 className="page-title">Good {getTimeGreeting()}, {userName.split(' ')[0]} 👋</h1>
-          <p className="page-subtitle">Here&apos;s the status of your application pipeline.</p>
+        <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: 16 }}>
+          <div>
+            <h1 className="page-title">Good {getTimeGreeting()}, {userName.split(' ')[0]} 👋</h1>
+            <p className="page-subtitle">Here&apos;s the status of your application pipeline.</p>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <button
+              id="start-search-btn"
+              className="btn btn-primary btn-lg"
+              onClick={handleStartSearch}
+              disabled={!canSearch || searching}
+              title={!canSearch ? 'Upload a resume and set a search profile first.' : undefined}
+            >
+              {searching ? 'Starting search…' : '🔍 Start Job Search'}
+            </button>
+            {!canSearch && (
+              <p className="text-sm text-muted" style={{ marginTop: 6 }}>
+                {!hasResume && !hasSearchProfile
+                  ? <>Upload a resume and set your search profile in <Link href="/onboarding">Onboarding</Link> to enable this.</>
+                  : !hasResume
+                  ? <>Upload a resume in <Link href="/onboarding">Onboarding</Link> to enable this.</>
+                  : <>Add at least one job title in <Link href="/settings">Settings</Link> to enable this.</>}
+              </p>
+            )}
+          </div>
         </div>
 
         {/* Stat grid */}
