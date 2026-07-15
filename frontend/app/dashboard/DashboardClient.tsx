@@ -2,10 +2,12 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { signOut, useSession } from 'next-auth/react';
 import Link from 'next/link';
 import type { ApiApplication, UsageStats } from '@/lib/api';
+
+const POLL_INTERVAL_MS = 5000;
 
 type Filter = 'all' | 'matched' | 'ready' | 'applied' | 'failed';
 
@@ -53,15 +55,40 @@ interface Props {
   hasSearchProfile: boolean;
 }
 
-export default function DashboardClient({ applications, usage, userName, hasResume, hasSearchProfile }: Props) {
+export default function DashboardClient({ applications: initialApplications, usage: initialUsage, userName, hasResume, hasSearchProfile }: Props) {
   const { data: session } = useSession();
   const userId = (session?.user as any)?.id as string | undefined;
   const [filter, setFilter] = useState<Filter>('all');
   const [approving, setApproving] = useState<string | null>(null);
   const [message, setMessage] = useState<{ text: string; type: 'ok' | 'err' } | null>(null);
   const [searching, setSearching] = useState(false);
+  const [applications, setApplications] = useState<ApiApplication[]>(initialApplications);
+  const [usage, setUsage] = useState<UsageStats>(initialUsage);
 
   const canSearch = hasResume && hasSearchProfile;
+
+  const refresh = useCallback(async () => {
+    if (!userId) return;
+    const base = process.env.NEXT_PUBLIC_AUTOMATION_API ?? 'http://localhost:3001';
+    try {
+      const [appsRes, usageRes] = await Promise.all([
+        fetch(`${base}/api/me/applications`, { headers: { 'X-User-Id': userId } }),
+        fetch(`${base}/api/me/usage`, { headers: { 'X-User-Id': userId } }),
+      ]);
+      if (appsRes.ok) setApplications(await appsRes.json());
+      if (usageRes.ok) setUsage(await usageRes.json());
+    } catch {
+      // Silent — background poll, don't disrupt the UI on transient network errors.
+    }
+  }, [userId]);
+
+  // Poll for pipeline progress (scrape -> match -> tailor -> apply) so the
+  // dashboard reflects background worker activity without a manual refresh.
+  useEffect(() => {
+    if (!userId) return;
+    const id = setInterval(refresh, POLL_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [userId, refresh]);
 
   const filtered = applications.filter(a => {
     if (filter === 'all') return true;
@@ -92,6 +119,7 @@ export default function DashboardClient({ applications, usage, userName, hasResu
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       setMessage({ text: `✓ ${data.message}`, type: 'ok' });
+      refresh();
     } catch (err: any) {
       setMessage({ text: err.message, type: 'err' });
     } finally {
@@ -118,6 +146,7 @@ export default function DashboardClient({ applications, usage, userName, hasResu
           type: 'ok',
         });
       }
+      refresh();
     } catch (err: any) {
       setMessage({ text: err.message, type: 'err' });
     } finally {
@@ -275,6 +304,16 @@ export default function DashboardClient({ applications, usage, userName, hasResu
                 </div>
 
                 {statusBadge(app.status)}
+
+                <a
+                  href={app.job.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn btn-ghost btn-sm"
+                  title="View the original job posting"
+                >
+                  View Posting ↗
+                </a>
 
                 {/* Action buttons for READY status */}
                 {app.status === 'READY' && (

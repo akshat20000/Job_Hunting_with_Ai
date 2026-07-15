@@ -105,7 +105,7 @@ export class ApplyWorker extends BaseWorker<ApplyJobData, void> {
       let isApplied = false;
 
       // 6. Dispatch browser automation tasks by target platform
-      if (jobUrl.includes('greenhouse.io') || jobUrl.includes('boards.greenhouse.io')) {
+      if (jobUrl.includes('greenhouse.io') || jobUrl.includes('gh_jid=')) {
         await applyGreenhouse(dbJob.url, app.resumePath, app.coverLetterPath || undefined, screenshotPath);
         isApplied = true;
       } else if (jobUrl.includes('lever.co') || jobUrl.includes('jobs.lever.co')) {
