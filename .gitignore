@@ -49,7 +49,8 @@ Thumbs.db
 # ==============================================================================
 # Application Storage & Outputs
 # ==============================================================================
-**/storage/
+**/storage
+!automation-engine/src/storage
 **/screenshots/
 **/applications/**/*.pdf
 **/applications/**/*.png
