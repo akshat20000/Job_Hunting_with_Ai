@@ -115,8 +115,22 @@ export class ApplicationRepository extends BaseRepository {
   }
 
   /**
+   * Delete all of this user's tracked applications. Called when a new
+   * search starts, so the dashboard reflects only the latest search's
+   * results instead of accumulating across runs. This only removes this
+   * user's Application (join) rows — the underlying Job/Company records
+   * are global/shared and are left untouched.
+   */
+  async deleteAllForUser(userId: string): Promise<number> {
+    const result = await this.prisma.application.deleteMany({ where: { userId } });
+    return result.count;
+  }
+
+  /**
    * Count how many applications this user has submitted today.
-   * Used by UsageLimiter to enforce daily plan caps.
+   * NOTE: no longer used to enforce the daily quota (that's now
+   * search-based — see UsageLimiter/SearchRunRepository). Kept for
+   * dashboards/analytics that want a raw "applies today" figure.
    */
   async countTodayApplications(userId: string): Promise<number> {
     const startOfDay = new Date();

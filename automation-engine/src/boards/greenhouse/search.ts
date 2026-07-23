@@ -38,6 +38,7 @@ export async function scrapeGreenhouse(
 
   const results: (GreenhouseParsedJob & { url: string })[] = [];
   const queryLower = query.toLowerCase();
+  const perCompanyCap = Math.max(1, Math.ceil(limit / GREENHOUSE_COMPANY_WATCHLIST.length));
 
   for (const boardToken of GREENHOUSE_COMPANY_WATCHLIST) {
     if (results.length >= limit) break;
@@ -60,8 +61,9 @@ export async function scrapeGreenhouse(
 
       const companyDisplayName = boardToken.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
+      let takenFromThisCompany = 0;
       for (const job of matches) {
-        if (results.length >= limit) break;
+        if (results.length >= limit || takenFromThisCompany >= perCompanyCap) break;
         results.push({
           title: job.title.trim(),
           description: stripHtml(job.content || '') || 'No Description Available',
@@ -71,6 +73,7 @@ export async function scrapeGreenhouse(
           salary: undefined,
           url: job.absolute_url,
         });
+        takenFromThisCompany++;
       }
     } catch (err: any) {
       console.error(`❌ [Greenhouse Search] Failed to poll board "${boardToken}":`, err.message);

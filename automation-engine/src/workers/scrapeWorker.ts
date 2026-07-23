@@ -49,25 +49,35 @@ export class ScrapeWorker extends BaseWorker<ScrapeJobData, void> {
 
     console.log(
       `🔍 [ScrapeWorker] Executing scrape for boards: ${boards.join(', ')} | ` +
-      `Queries: ${searchQueries.join(', ')} | Locations: ${locations.join(', ')} | User: ${userId}`
+      `Queries: ${searchQueries.join(', ')} | Locations: ${locations.join(', ')} | User: ${userId} | ` +
+      `Max results/board: ${limit}`
     );
 
     for (const board of boards) {
+      // Cap applies across the WHOLE search for this board (all titles and
+      // locations combined) — not per title. Search broadly under the hood,
+      // but stop persisting/showing results for this board once we hit it.
+      let boardResultCount = 0;
+
       for (const searchQuery of searchQueries) {
+        if (boardResultCount >= limit) break;
         const locationsToTry = board === 'adzuna' ? locations : [locations[0]];
 
         for (const location of locationsToTry) {
+          if (boardResultCount >= limit) break;
+          const remaining = limit - boardResultCount;
           try {
             let scrapedJobs: any[] = [];
             if (board === 'linkedin') {
-              scrapedJobs = await scrapeLinkedIn(searchQuery, location, limit);
+              scrapedJobs = await scrapeLinkedIn(searchQuery, location, remaining);
             } else if (board === 'greenhouse') {
-              scrapedJobs = await scrapeGreenhouse(searchQuery, limit);
+              scrapedJobs = await scrapeGreenhouse(searchQuery, remaining);
             } else if (board === 'lever') {
-              scrapedJobs = await scrapeLever(searchQuery, limit);
+              scrapedJobs = await scrapeLever(searchQuery, remaining);
             } else if (board === 'adzuna') {
-              scrapedJobs = await scrapeAdzuna(searchQuery, location, limit);
+              scrapedJobs = await scrapeAdzuna(searchQuery, location, remaining);
             }
+            boardResultCount += scrapedJobs.length;
 
             console.log(
               `📊 [ScrapeWorker] Found ${scrapedJobs.length} listings from ${board} ` +
@@ -78,35 +88,38 @@ export class ScrapeWorker extends BaseWorker<ScrapeJobData, void> {
               // 1. Upsert Company info
               const company = await this.companyRepo.upsert(sj.companyName, sj.companyWebsite);
 
-              // 2. Prevent duplicates: skip existing URL entries
-              const existingJob = await this.jobRepo.findByUrl(sj.url);
-              if (existingJob) {
-                console.log(`⏭️ [ScrapeWorker] Listing already exists: ${sj.url}. Skipping.`);
-                continue;
+              // 2. Jobs are global/shared (deduped by URL) — reuse the
+              //    existing row if another user (or an earlier search)
+              //    already found this posting, rather than re-creating it.
+              let dbJob = await this.jobRepo.findByUrl(sj.url);
+              if (dbJob) {
+                console.log(`♻️ [ScrapeWorker] Listing already known: ${sj.url}. Reusing Job record.`);
+              } else {
+                // 3. Persist new Job
+                dbJob = await this.jobRepo.create({
+                  title: sj.title,
+                  description: sj.description,
+                  url: sj.url,
+                  location: sj.location,
+                  salary: sj.salary,
+                  companyId: company.id,
+                  status: 'FOUND',
+                });
               }
 
-              // 3. Persist Job
-              const newJob = await this.jobRepo.create({
-                title: sj.title,
-                description: sj.description,
-                url: sj.url,
-                location: sj.location,
-                salary: sj.salary,
-                companyId: company.id,
-                status: 'FOUND',
-              });
-
-              // 4. Create Application record — now keyed by userId + jobId
-              await this.applicationRepo.upsert(userId, newJob.id, {
+              // 4. Create/refresh THIS user's Application record — always,
+              //    even for a pre-existing Job, since a fresh search clears
+              //    the user's prior Applications and needs to relink them.
+              await this.applicationRepo.upsert(userId, dbJob.id, {
                 status: 'FOUND',
               });
 
               // 5. Delegate to AI evaluation queue (pass userId through pipeline)
-              await aiQueue.add(`ai-evaluate-${newJob.id}`, {
-                jobId: newJob.id,
+              await aiQueue.add(`ai-evaluate-${dbJob.id}`, {
+                jobId: dbJob.id,
                 userId,
               });
-              console.log(`🤖 [ScrapeWorker] Enqueued Job ID ${newJob.id} for fit evaluation.`);
+              console.log(`🤖 [ScrapeWorker] Enqueued Job ID ${dbJob.id} for fit evaluation.`);
             }
           } catch (boardError: any) {
             console.error(

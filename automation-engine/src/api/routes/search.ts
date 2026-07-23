@@ -2,15 +2,19 @@ import { Router, Request, Response } from 'express';
 import { requireUserId, AuthenticatedRequest } from '../middleware/auth.js';
 import { SearchProfileRepository } from '../../repositories/searchProfileRepository.js';
 import { ResumeRepository } from '../../repositories/resumeRepository.js';
+import { ApplicationRepository } from '../../repositories/applicationRepository.js';
 import { scrapeQueue } from '../../queue/jobQueues.js';
+import { UsageLimiter, DailyLimitExceededError } from '../../domain/UsageLimiter.js';
+import { PLAN_LIMITS, PlanName, isValidPlan } from '../../config/plans.js';
 
 const router = Router();
 const searchProfileRepo = new SearchProfileRepository();
 const resumeRepo = new ResumeRepository();
+const applicationRepo = new ApplicationRepository();
+const usageLimiter = new UsageLimiter();
 
 const DEFAULT_BOARDS = ['greenhouse', 'lever'];
 const DEFAULT_LOCATIONS = ['Remote'];
-const SCRAPE_LIMIT_PER_QUERY = 5;
 
 /**
  * POST /api/me/search/start
@@ -20,12 +24,19 @@ const SCRAPE_LIMIT_PER_QUERY = 5;
  * authenticated user's saved resume + search profile and enqueues a
  * user-scoped scrape job so the existing ScrapeWorker -> AIWorker -> ResumeWorker
  * -> ApplyWorker pipeline actually starts moving.
+ *
+ * USAGE MODEL: one token is consumed per search START, regardless of how many
+ * (if any) results get applied to. Applying is unlimited/free. Search itself
+ * scrapes broadly per board under the hood, but only the top N results per
+ * board (per the user's plan) are persisted/shown — see PLAN_LIMITS.maxResultsPerBoard.
+ *
+ * Starting a new search REPLACES the user's previous results — their prior
+ * Application rows are cleared so the dashboard reflects only this run.
  */
 router.post('/start', requireUserId, async (req: Request, res: Response) => {
-  const { userId } = req as AuthenticatedRequest;
+  const { userId, userPlan } = req as AuthenticatedRequest;
 
   try {
-    // 1. Require an active resume — nothing to evaluate fit against otherwise.
     const activeResume = await resumeRepo.findActiveByUser(userId);
     if (!activeResume) {
       res.status(400).json({
@@ -34,7 +45,6 @@ router.post('/start', requireUserId, async (req: Request, res: Response) => {
       return;
     }
 
-    // 2. Require a search profile with at least one job title.
     const profile = await searchProfileRepo.findByUser(userId);
     if (!profile || !profile.titles || profile.titles.length === 0) {
       res.status(400).json({
@@ -43,7 +53,6 @@ router.post('/start', requireUserId, async (req: Request, res: Response) => {
       return;
     }
 
-    // 3. Avoid piling up duplicate runs if the user double-clicks or a
     //    previous search for this user is still in flight.
     const [waiting, active, delayed] = await Promise.all([
       scrapeQueue.getJobs(['waiting']),
@@ -60,23 +69,46 @@ router.post('/start', requireUserId, async (req: Request, res: Response) => {
       return;
     }
 
-    // Board names in the search profile are validated at save-time against
+    try {
+      await usageLimiter.check(userId, userPlan);
+    } catch (err) {
+      if (err instanceof DailyLimitExceededError) {
+        res.status(429).json({ error: err.message });
+        return;
+      }
+      throw err;
+    }
+
     // ['linkedin', 'greenhouse', 'lever']. LinkedIn scraping stays opt-in only
     // (see README ToS note) but is honored here if the user explicitly chose it.
     const boards = profile.boards && profile.boards.length > 0 ? profile.boards : DEFAULT_BOARDS;
     const locations = profile.locations && profile.locations.length > 0 ? profile.locations : DEFAULT_LOCATIONS;
 
+    const plan: PlanName = isValidPlan(userPlan) ? userPlan : 'FREE';
+    const maxResultsPerBoard = PLAN_LIMITS[plan].maxResultsPerBoard;
+
+    // 5. A new search REPLACES old results — clear this user's previously
+    //    tracked applications before enqueueing the new run.
+    const cleared = await applicationRepo.deleteAllForUser(userId);
+    if (cleared > 0) {
+      console.log(`🧹 [SearchRoute] Cleared ${cleared} previous result(s) for user ${userId} before starting a new search.`);
+    }
+
+    // 6. Consume the quota token now that we're committed to running this search.
+    await usageLimiter.record(userId, boards, profile.titles);
+
     const job = await scrapeQueue.add(`user-triggered-scrape-${userId}`, {
       boards,
       searchQueries: profile.titles,
       locations,
-      limit: SCRAPE_LIMIT_PER_QUERY,
+      limit: maxResultsPerBoard,
       userId,
     });
 
     console.log(
       `🚀 [SearchRoute] User ${userId} started a job search. Boards: ${boards.join(', ')} | ` +
-      `Titles: ${profile.titles.join(', ')} | Locations: ${locations.join(', ')} | BullMQ Job ID: ${job.id}`
+      `Titles: ${profile.titles.join(', ')} | Locations: ${locations.join(', ')} | ` +
+      `Max results/board: ${maxResultsPerBoard} | BullMQ Job ID: ${job.id}`
     );
 
     res.status(202).json({
@@ -86,6 +118,7 @@ router.post('/start', requireUserId, async (req: Request, res: Response) => {
       boards,
       titles: profile.titles,
       locations,
+      maxResultsPerBoard,
     });
   } catch (err: any) {
     console.error('[SearchRoute] Failed to start search:', err);

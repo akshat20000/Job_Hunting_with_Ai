@@ -4,8 +4,8 @@ import usageRouter from './routes/usage.js';
 import resumesRouter from './routes/resumes.js';
 import applicationsRouter from './routes/applications.js';
 import searchProfileRouter from './routes/searchProfile.js';
+import searchRouter from './routes/search.js';
 import authRouter from './routes/auth.js';
-import searchRouter from './routes/search.js'
 
 export function createApiApp() {
   const app = express();
@@ -28,7 +28,7 @@ export function createApiApp() {
   app.use('/api/me/resumes', resumesRouter);
   app.use('/api/me/applications', applicationsRouter);
   app.use('/api/me/search-profile', searchProfileRouter);
-  app.use('/api/me/search',searchRouter);
+  app.use('/api/me/search', searchRouter);
 
   // Global error handler
   app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

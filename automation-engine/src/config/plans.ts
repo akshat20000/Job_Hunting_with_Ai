@@ -1,13 +1,25 @@
 // Plan limits — single source of truth for usage caps.
-// FREE limit is hardcoded at 4 per spec.
-// PREMIUM limit is configurable via PREMIUM_DAILY_LIMIT env var (defaults to 50).
+//
+// The unit of "usage" is a SEARCH, not an application: clicking "Start Job
+// Search" consumes one token regardless of how many (if any) of the results
+// get auto-applied to. Applying is unlimited/free — it's gated only by how
+// many matching jobs a search actually turns up.
+//
+// FREE limit is hardcoded at 4 searches/day per spec.
+// PREMIUM limits are configurable via env vars (defaults are placeholders —
+// revisit premium tiering later).
 
 export const PLAN_LIMITS = {
   FREE: {
-    dailyApplications: 4,
+    dailySearches: 4,
+    // Search runs broadly under the hood per board, but only this many
+    // results per board are persisted/shown per search — keeps the
+    // dashboard from being flooded by one high-volume employer.
+    maxResultsPerBoard: 15,
   },
   PREMIUM: {
-    dailyApplications: parseInt(process.env.PREMIUM_DAILY_LIMIT ?? '50', 10),
+    dailySearches: parseInt(process.env.PREMIUM_DAILY_SEARCHES ?? '50', 10),
+    maxResultsPerBoard: parseInt(process.env.PREMIUM_MAX_RESULTS_PER_BOARD ?? '15', 10),
   },
 } as const;
 

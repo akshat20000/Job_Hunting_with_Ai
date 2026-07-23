@@ -24,6 +24,7 @@ model User {
   resumes       Resume[]
   searchProfile SearchProfile?
   applications  Application[]
+  searchRuns    SearchRun[]
 }
 
 model Account {
@@ -113,6 +114,17 @@ model Job {
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
   applications   Application[]
+}
+
+// One row per "Start Job Search" click — the unit the daily quota is
+// actually measured against (searching, not applying, consumes a token).
+model SearchRun {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  boards    String[] @default([])
+  titles    String[] @default([])
+  createdAt DateTime @default(now())
 }
 
 // Per-user Application records

@@ -3,7 +3,6 @@ import { Job as BullJob } from 'bullmq';
 import { QUEUES } from '../queue/constants.js';
 import { notificationQueue } from '../queue/jobQueues.js';
 import { ApplicationStateMachine } from '../domain/ApplicationStateMachine.js';
-import { UsageLimiter, DailyLimitExceededError } from '../domain/UsageLimiter.js';
 import { UserRepository } from '../repositories/userRepository.js';
 import { env } from '../config/index.js';
 import path from 'path';
@@ -39,7 +38,6 @@ export class LinkedInManualSubmitRequired extends Error {
 }
 
 export class ApplyWorker extends BaseWorker<ApplyJobData, void> {
-  private usageLimiter = new UsageLimiter();
   private userRepo = new UserRepository();
 
   constructor() {
@@ -50,25 +48,17 @@ export class ApplyWorker extends BaseWorker<ApplyJobData, void> {
     const { jobId, userId } = job.data;
     console.log(`🤖 [ApplyWorker] Launching automation apply sequence for Job ID: ${jobId} (User: ${userId})`);
 
-    // 1. Fetch user (needed for plan check)
+    // 1. Fetch user (needed further down for notifications/context)
     const user = await this.userRepo.findById(userId);
     if (!user) {
       throw new Error(`User ${userId} not found.`);
     }
 
-    // 2. USAGE LIMIT CHECK — enforce daily cap before doing anything
-    try {
-      await this.usageLimiter.check(userId, user.plan);
-    } catch (err) {
-      if (err instanceof DailyLimitExceededError) {
-        console.warn(`🚫 [ApplyWorker] Daily limit reached for user ${userId} (plan: ${user.plan}). Skipping job ${jobId}.`);
-        // Don't mark as FAILED — just park. The job remains READY for the next day.
-        throw err;
-      }
-      throw err;
-    }
+    // NOTE: no daily-limit check here. Usage quota is consumed once, at
+    // search time (see UsageLimiter + /api/me/search/start) — applying to
+    // matched jobs is unlimited and doesn't touch the quota.
 
-    // 3. Fetch job and application documents
+    // 2. Fetch job and application documents
     const dbJob = await this.jobRepo.findById(jobId);
     if (!dbJob) {
       throw new Error(`Job listing with ID ${jobId} was not found in the DB.`);
@@ -146,7 +136,6 @@ export class ApplyWorker extends BaseWorker<ApplyJobData, void> {
         await this.jobRepo.updateStatus(jobId, 'FAILED');
       }
 
-      // Rethrow to allow BullMQ to register the attempt failure
       throw error;
     }
   }

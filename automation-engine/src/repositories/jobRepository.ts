@@ -26,7 +26,7 @@ export class JobRepository extends BaseRepository {
     salary?: string;
     companyId: string;
     status?: string;
-  }): Promise<Job> {
+  }): Promise<JobWithCompany> {
     return this.prisma.job.create({
       data: {
         title: data.title,
@@ -37,6 +37,7 @@ export class JobRepository extends BaseRepository {
         status: data.status || 'FOUND',
         companyId: data.companyId,
       },
+      include: { company: true },
     });
   }
 

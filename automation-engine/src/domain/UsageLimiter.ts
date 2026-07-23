@@ -1,5 +1,5 @@
 import { PLAN_LIMITS, PlanName, isValidPlan } from '../config/plans.js';
-import { ApplicationRepository } from '../repositories/applicationRepository.js';
+import { SearchRunRepository } from '../repositories/searchRunRepository.js';
 
 export class DailyLimitExceededError extends Error {
   readonly plan: PlanName;
@@ -7,9 +7,9 @@ export class DailyLimitExceededError extends Error {
   readonly limit: number;
 
   constructor(plan: PlanName, used: number) {
-    const limit = PLAN_LIMITS[plan].dailyApplications;
+    const limit = PLAN_LIMITS[plan].dailySearches;
     super(
-      `Daily application limit reached for ${plan} plan: ${used}/${limit} used today. ` +
+      `Daily search limit reached for ${plan} plan: ${used}/${limit} used today. ` +
         `Upgrade to PREMIUM for a higher limit.`
     );
     this.name = 'DailyLimitExceededError';
@@ -20,22 +20,32 @@ export class DailyLimitExceededError extends Error {
 }
 
 export class UsageLimiter {
-  private appRepo = new ApplicationRepository();
+  private searchRunRepo = new SearchRunRepository();
 
   /**
-   * Check whether the user has remaining capacity under their plan.
+   * Check whether the user has remaining search capacity under their plan.
    * Throws DailyLimitExceededError if the cap has been reached.
    *
-   * Call this before enqueuing any application to the apply worker.
+   * Call this before enqueuing any search — applying to matched jobs does
+   * NOT consume quota, only starting a search does.
    */
   async check(userId: string, planRaw: string): Promise<void> {
     const plan: PlanName = isValidPlan(planRaw) ? planRaw : 'FREE';
-    const limit = PLAN_LIMITS[plan].dailyApplications;
-    const used = await this.appRepo.countTodayApplications(userId);
+    const limit = PLAN_LIMITS[plan].dailySearches;
+    const used = await this.searchRunRepo.countToday(userId);
 
     if (used >= limit) {
       throw new DailyLimitExceededError(plan, used);
     }
+  }
+
+  /**
+   * Record that a search was started, consuming one quota token for today.
+   * Call this only after all validation has passed and the search is
+   * definitely being enqueued.
+   */
+  async record(userId: string, boards: string[], titles: string[]): Promise<void> {
+    await this.searchRunRepo.record(userId, boards, titles);
   }
 
   /**
@@ -46,8 +56,8 @@ export class UsageLimiter {
     planRaw: string
   ): Promise<{ used: number; limit: number; plan: PlanName; resetsAt: Date }> {
     const plan: PlanName = isValidPlan(planRaw) ? planRaw : 'FREE';
-    const limit = PLAN_LIMITS[plan].dailyApplications;
-    const used = await this.appRepo.countTodayApplications(userId);
+    const limit = PLAN_LIMITS[plan].dailySearches;
+    const used = await this.searchRunRepo.countToday(userId);
 
     const resetsAt = new Date();
     resetsAt.setDate(resetsAt.getDate() + 1);

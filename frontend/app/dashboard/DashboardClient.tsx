@@ -29,7 +29,7 @@ function UsageMeter({ usage }: { usage: UsageStats }) {
   return (
     <div className="card-sm" style={{ minWidth: 220 }}>
       <div className="flex items-center justify-between mb-2">
-        <span className="text-sm text-muted">Daily Applications</span>
+        <span className="text-sm text-muted">Daily Searches</span>
         <span className={`badge ${isFull ? 'badge-failed' : 'badge-matched'}`}>{usage.plan}</span>
       </div>
       <div className="usage-bar-track">
